@@ -1,0 +1,214 @@
+    <!DOCTYPE html>
+    <html>
+
+    <head>
+
+    <title>Webatlas demo</title>
+    <meta charset="utf-8" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- <link rel="stylesheet" href="http://cdn.leafletjs.com/leaflet/v0.7.7/leaflet.css" /> -->
+    <link rel="stylesheet" href="http://cdn.leafletjs.com/leaflet-0.7.5/leaflet.css" />
+
+    <style>
+        
+        body, html {
+            margin:0;
+            padding:0;
+        }
+
+        #map {
+            height: 100%;
+            width: 70%;
+            position: absolute;
+        }
+
+        #sidebar {
+            position:absolute;
+            right:0;
+            height: 100%;
+            width: 30%;
+        }
+
+    </style>
+
+    </head>
+
+    <body>
+
+    <div id="map"></div>
+    <div id="sidebar">
+
+        <h2>Teiger</h2>
+        <input type="checkbox" id="matrikkelinclude"/><label for="matrikkelinclude">Inkluder matrikkelenhets teiger</label>
+        <h2>Resultat</h2>
+        <div id="results"></div>
+    </div>
+
+
+    <script src="http://cdn.leafletjs.com/leaflet/v0.7.7/leaflet.js"></script>
+    <script src="https://cdn.rawgit.com/Norkart/L.TileLayer.Webatlas/master/L.TileLayer.Webatlas.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.0.0.min.js"></script>
+
+
+    <script>    
+
+        /* Keys for accessing Norkart's Webatlas services (www.norkart.no) */
+        var mapKey = "your-map-key";
+        var matrikkelKartKey = "your-matrikkelkart-key";
+
+
+        /* URL endpoints for Webatlas API services */
+        var fritekstsokUrl = "https://www.webatlas.no/WAAPI-FritekstSok";
+        var matrikkelGrunnbokUrl = "https://www.webatlas.no/WAAPI-MatrikkelGrunnbok";
+        var matrikkelKartUrl = "https://www.webatlas.no/WAAPI-MatrikkelKart";
+        
+
+        /* Helper function for performing GET requests */
+        function getRequest(url, parameters, success, error) {
+
+            var paramArray = [];
+            for (key in parameters) {
+                paramArray.push(key + '=' + parameters[key]);
+            }
+            var paramString = paramArray.join('&');
+
+            $.ajax({
+                "url" : url + '?format=json&' + paramString,
+                "method" : "GET",
+                "success" : success,
+                "error" : error
+            });
+        }
+
+
+        /* get teiger for a position, can choose to exclude/include potential teiger connected to the selected teig's matrikkelenhet */
+        function getTeigerForLatLng(lat, lng, includeMatrikkelenhetsTeiger, success, error) {
+            var parameters = {
+                'inkludermatrikkelenhetsteiger' : includeMatrikkelenhetsTeiger,
+                'api_key': matrikkelKartKey,
+                'GeometryTextFormat': "GeoJson",
+                'y' : lat,
+                'x' : lng
+            }
+            var url = matrikkelKartUrl + '/teig/punkt'
+            getRequest(url, parameters, success, error);
+        }
+
+        var includeMatrikkelenhetsTeiger = true;
+        $('#matrikkelinclude').prop('checked', includeMatrikkelenhetsTeiger);
+        $('#matrikkelinclude').on('change', function(e) {
+            includeMatrikkelenhetsTeiger = $('#matrikkelinclude').is(':checked');
+        });
+
+        function clearResults() {
+            $('#results').empty();
+
+            map.eachLayer(function (layer) {
+                if (layer.type == 'teig') {
+                    map.removeLayer(layer);
+                }
+                
+            });
+        }
+
+        function getProperties(teig) {
+            var properties = {};
+            var ignore = ['WellKnownTextGeometri', 'Geometri']
+            for (var key in teig) {
+                if (ignore.indexOf(key) == -1) {
+                    properties[key] = teig[key];
+                    console.log(key, properties[key]);
+                }
+            }
+            return properties;
+        }
+
+
+        function getTeigInfoText(properties) {
+            var teigText = "<p>TeigID: " + properties.Id + '</p>';  
+
+            var matrikkelenhetCount = properties.Matrikkelenheter.length;
+            var matText = matrikkelenhetCount > 1 ? 'Matrikkelenheter' : 'Matrikkelenhet';
+            
+            for (var i in properties.Matrikkelenheter) {
+                matText += '<br>';
+                mat = properties.Matrikkelenheter[i];
+                matText += mat.Kommunenummer + ' - ' + mat.Gaardsnummer + '/' + mat.Bruksnummer;
+                
+                if (mat.Festenummer > 0) {
+                    matText += '/' + mat.Festenummer; 
+                } else if (mat.Seksjonsnummer > 0) {
+                    matText += '/0/'+ mat.Seksjonsnummer;
+                }
+
+            }
+
+            var teigInfo = teigText + matText;
+            return teigInfo;
+
+        }
+
+
+        function showTeiger(data) {
+
+
+            /* Add teiger to map */
+            var teigerCount = data.Teiger.length;
+            for (var i in data.Teiger) {
+                var geojson = JSON.parse(data.Teiger[i].Geometri);
+                geojson['properties'] = getProperties(data.Teiger[i]);
+                var layer =  L.geoJson(geojson, {
+                    onEachFeature: function (feature, layer) {
+                        layer.bindPopup(getTeigInfoText(feature.properties));
+                    }
+                }).addTo(map);
+
+                layer.type = "teig";
+
+            }
+
+
+            /* Show teig metadata information */
+
+            if (teigerCount == 0) {
+                $('#results').html("<p>Ingen teiger funnet.</p>");
+            } else if (teigerCount == 1) {
+                $('#results').html("<p>1 teig funnet</p>");
+            } else {
+                $('#results').html("<p>" + teigerCount + " teiger funnet</p>");
+            }
+            
+        }
+
+        function showTeigForLatLng(lat, lng) {
+            
+            getTeigerForLatLng(
+                lat, 
+                lng, 
+                includeMatrikkelenhetsTeiger,
+                function(data) {
+                    clearResults();
+                    showTeiger(data);
+                }, 
+                function(err) {
+                    alert("Feil", err);
+                }
+            );
+        }
+
+
+        /* Set up map and add event listener for click */
+        var map = L.map('map').setView([63, 8], 5);
+
+        var layer = L.tileLayer.webatlas({apikey: mapKey, mapType: L.TileLayer.Webatlas.Type.VEKTOR}).addTo(map);
+
+        map.on('click', function(event) {
+            showTeigForLatLng(event.latlng.lat, event.latlng.lng);
+        });
+
+
+    </script>
+
+    </body>
+    </html>
