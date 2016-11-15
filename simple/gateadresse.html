@@ -1,0 +1,246 @@
+    <!DOCTYPE html>
+    <html>
+
+    <head>
+
+    <title>Webatlas demo</title>
+    <meta charset="utf-8" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/leaflet.css" />
+    <style>
+        
+        body, html {
+            margin:0;
+            padding:0;
+        }
+
+        #map {
+            height: 100%;
+            width: 80%;
+            right:0;
+            position: absolute;
+        }
+
+        #sidebar {
+            padding:10px;
+            position:absolute;
+            left:0;
+            height: 100%;
+            width: 19%;
+        }
+
+        #search-button {
+            display:inline-block;
+            padding:5px;
+            user-select: none;
+            background-color:#454545;
+            cursor:pointer;
+            color: white;
+            margin-left:4px;
+        }
+
+        #search-button:hover {
+            background-color:#343434;
+        }
+
+        .results {
+            min-height:200px;
+        }
+        .results p {           
+            margin: 0;
+            margin-right:20px;
+            padding:10px; 
+            cursor: pointer;
+            min-width:100px;
+        }
+        .results p:hover {            
+            background-color: #dddddd;
+        }
+
+    </style>
+
+    </head>
+
+    <body>
+
+    <div id="map"></div>
+    <div id="sidebar">
+
+        <h2>Autocomplete</h2>
+        <p>Search using the suggest endpoint. Suggest request sent on key press. Fast but does not tolerate typos.</p>
+        <input id="suggest"/>
+        <div id="suggestresults" class="results"></div>
+
+
+        <h2>Search</h2>
+        <p>Search using the search endpoint. Search sent on "Search" button click and Enter key stroke. A bit longer response time, more resilient to typos. E.g. <strong>"olav tryggvasonsgt 3"</strong> will result in correct result.</p>
+        <input id="search"/><div id="search-button">Search</div>
+        <div id="searchresults" class="results"></div>
+
+
+
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/leaflet.js"></script>
+    <script src="https://cdn.rawgit.com/Norkart/L.TileLayer.Webatlas/master/L.TileLayer.Webatlas.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.0.0.min.js"></script>
+
+
+    <script>    
+
+        /* Keys for accessing Norkart's Webatlas services (www.norkart.no) */
+        var wmsKey = "-your-wms-key-";
+        var searchKey = "-search-key-";
+
+
+        /* Setup leaflet with WMS layer Kart */
+        var map = L.map('map').setView([63, 8], 5);
+        var wmsLayer = L.tileLayer.wms('http://waapi.webatlas.no/wms-vektor-standard/?apitoken='+wmsKey, {
+            layers: 'Kart'
+        }).addTo(map);
+
+
+        var marker;
+        /* Function for adding a marker*/
+        function setMarker(lat, lng, name) {
+            console.log(lat, lng, name);
+            if (marker) {
+                marker.setLatLng([lat, lng]);
+                marker.bindPopup(name).openPopup();
+            } else {
+                marker = L.marker([lat, lng]).addTo(map);
+                marker.bindPopup(name).openPopup();
+            }
+            map.panTo(marker.getLatLng())
+        }
+
+
+
+        /* Targets for the search - you can combine several different sources */
+        var targetsAlt0 = ["gateadresse"]
+        var targetsAlt1 = ["adresse"]
+        var targetsAlt2 = ["matrikkeladresse"]
+        var targetsAlt3 = ["gateadresse", "matrikkelenhet"]
+        var targetsAlt4 = ["gateadresse", "matrikkelenhet", "stedsnavn"]
+
+        var targets = targetsAlt0;
+
+        /* URL endpoints for Webatlas API services */
+        var fritekstsokUrl = "https://www.webatlas.no/WAAPI-FritekstSok";
+        
+
+        /* Helper function for performing GET requests */
+        function getRequest(url, parameters, success) {
+
+            var paramArray = [];
+            for (key in parameters) {
+                paramArray.push(key + '=' + parameters[key]);
+            }
+            var paramString = paramArray.join('&');
+
+            $.ajax({
+                "headers": {
+                    "X-WAAPI-TOKEN" : searchKey
+                },
+                "url" : url + '?format=json&' + paramString,
+                "method" : "GET",
+                "success" : success,
+                "error" : function(e) { alert("error"); }
+            });
+        }
+
+
+        /* Perform search and handle callback */
+        function search(querytext, callback) {
+            if (querytext && querytext != "") {
+                var url = fritekstsokUrl + "/search/kommunecustom";
+                var parameters = {
+                    "Query" : querytext,
+                    "Targets" : targets.join(",")
+                }
+                getRequest(url, parameters, callback);
+            }
+        }
+
+
+        /* Handle search response */
+        var searchRes = $("#searchresults");
+        function showSearchResults(data) {
+
+            searchRes.empty();
+            for (var i=0; i<data.SearchResults.length; i++) {
+
+                (function() {
+                    var text = data.SearchResults[i].Source.Text;
+                    var lng = data.SearchResults[i].Source.Posisjon.X;
+                    var lat = data.SearchResults[i].Source.Posisjon.Y;   
+
+                    var el = $("<p>" + text + "</p>");             
+                    el.on('click', function(e) {
+                        setMarker(lat, lng, text)
+                    });
+                    searchRes.append(el);
+                })();
+            }
+        }
+
+
+        function suggest(querytext, callback) {
+            if (querytext && querytext != "") {
+                var url = fritekstsokUrl + "/suggest/kommunecustom";
+                var parameters = {
+                    "Query" : querytext,
+                    "Targets" : targets.join(",")
+                }
+                getRequest(url, parameters, callback)
+            }
+            
+        }
+
+
+        /* Handle suggestion response */
+        var suggestionRes = $("#suggestresults");
+        function showSuggestResults(data) {
+
+            suggestionRes.empty();
+
+            for (var i=0; i<data.Options.length; i++) {
+
+                (function() {
+                    var text = data.Options[i].Text;
+                    var lng = data.Options[i].PayLoad.Posisjon.X;
+                    var lat = data.Options[i].PayLoad.Posisjon.Y;   
+
+                    var el = $("<p>" + text + "</p>");             
+                    el.on('click', function(e) {
+                        setMarker(lat, lng, text)
+                    });
+                    suggestionRes.append(el);
+                })();
+            }
+        }
+
+        
+        
+        /* Register search for input change in search field */
+        $('#search-button').on('click', function(e) {     
+            search($('#search').val(), showSearchResults);
+        });
+        $('#search').on('keyup', function(e) {
+            if (e.keyCode == 13) {
+                search($('#search').val(), showSearchResults);
+            }
+        });
+
+        /* Register suggest for input change in suggest field */
+        $('#suggest').on('keyup', function(e) {            
+            suggest(e.currentTarget.value, showSuggestResults)
+        });
+        
+
+
+    </script>
+
+    </body>
+    </html>
