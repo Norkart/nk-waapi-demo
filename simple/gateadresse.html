@@ -23,7 +23,8 @@
         }
 
         #sidebar {
-            padding:10px;
+            padding:5px;
+            padding-left:10px;
             position:absolute;
             left:0;
             height: 100%;
@@ -45,12 +46,12 @@
         }
 
         .results {
-            min-height:200px;
+            min-height: 150px;
         }
         .results p {           
             margin: 0;
             margin-right:20px;
-            padding:10px; 
+            padding:6px; 
             cursor: pointer;
             min-width:100px;
         }
@@ -78,6 +79,10 @@
         <input id="search"/><div id="search-button">Search</div>
         <div id="searchresults" class="results"></div>
 
+
+        <h2>Combo</h2>
+        <p>Using the suggest endpoint and search endpoint as fallback. Will be be quick as long as adress is correct, a bit slower once fallback initiates. E.g. <strong>"olav tryggvasonsgt 3"</strong> will result in correct result.</p>
+        <input id="combo"/><div id="comboresults" class="results"></div>
 
 
     </div>
@@ -124,7 +129,7 @@
         var targetsAlt3 = ["gateadresse", "matrikkelenhet"]
         var targetsAlt4 = ["gateadresse", "matrikkelenhet", "stedsnavn"]
 
-        var targets = targetsAlt0;
+        var targets = targetsAlt3;
 
         /* URL endpoints for Webatlas API services */
         var fritekstsokUrl = "https://www.webatlas.no/WAAPI-FritekstSok";
@@ -186,6 +191,9 @@
         }
 
 
+
+
+        /* Perform suggest and handle callback */
         function suggest(querytext, callback) {
             if (querytext && querytext != "") {
                 var url = fritekstsokUrl + "/suggest/kommunecustom";
@@ -221,6 +229,95 @@
             }
         }
 
+        function suggest(querytext, callback) {
+            if (querytext && querytext != "") {
+                var url = fritekstsokUrl + "/suggest/kommunecustom";
+                var parameters = {
+                    "Query" : querytext,
+                    "Targets" : targets.join(",")
+                }
+                getRequest(url, parameters, callback)
+            }            
+        }
+
+
+        /* Handle suggestion response */
+        var suggestionRes = $("#suggestresults");
+        function showSuggestResults(data) {
+
+            suggestionRes.empty();
+
+            for (var i=0; i<data.Options.length; i++) {
+
+                (function() {
+                    var text = data.Options[i].Text;
+                    var lng = data.Options[i].PayLoad.Posisjon.X;
+                    var lat = data.Options[i].PayLoad.Posisjon.Y;   
+
+                    var el = $("<p>" + text + "</p>");
+                    el.on('click', function(e) {
+                        setMarker(lat, lng, text)
+                    });
+                    suggestionRes.append(el);
+                })();
+            }
+        }
+
+
+
+        /* Perform combo request */
+        var comboRes = $("#comboresults");        
+        function combo(querytext, callback) {
+            suggest(querytext, function(data) {
+
+                if (data.Options.length == 0) {
+
+                    /* Fallback to search */
+
+                    search(querytext, function(data) {
+                        comboRes.empty();
+                        for (var i=0; i<data.SearchResults.length; i++) {
+
+                            (function() {
+                                var text = data.SearchResults[i].Source.Text;
+                                var lng = data.SearchResults[i].Source.Posisjon.X;
+                                var lat = data.SearchResults[i].Source.Posisjon.Y;   
+
+                                var el = $("<p>" + text + "</p>");             
+                                el.on('click', function(e) {
+                                    setMarker(lat, lng, text)
+                                });
+                                comboRes.append(el);
+                            })();
+                        }
+                    });
+
+                } else {
+
+                    /* Handle suggest response */
+
+                    comboRes.empty();
+                    for (var i=0; i<data.Options.length; i++) {
+                        (function() {
+                            var text = data.Options[i].Text;
+                            var lng = data.Options[i].PayLoad.Posisjon.X;
+                            var lat = data.Options[i].PayLoad.Posisjon.Y;   
+
+                            var el = $("<p>" + text + "</p>");
+                            el.on('click', function(e) {
+                                setMarker(lat, lng, text)
+                            });
+                            comboRes.append(el);
+                        })();
+                    }
+                }
+
+            });
+        }
+
+
+
+
         
         
         /* Register search for input change in search field */
@@ -235,9 +332,13 @@
 
         /* Register suggest for input change in suggest field */
         $('#suggest').on('keyup', function(e) {            
-            suggest(e.currentTarget.value, showSuggestResults)
+            suggest(e.currentTarget.value, showSuggestResults);
         });
         
+        /* Register suggest for input change in suggest field */
+        $('#combo').on('keyup', function(e) {
+            combo(e.currentTarget.value);
+        });
 
 
     </script>
