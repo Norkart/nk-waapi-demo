@@ -87,6 +87,7 @@
 
     </div>
 
+    <script src="config.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/leaflet.js"></script>
     <script src="https://cdn.rawgit.com/Norkart/L.TileLayer.Webatlas/master/L.TileLayer.Webatlas.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.0.0.min.js"></script>
@@ -95,16 +96,12 @@
     <script>    
 
         /* Keys for accessing Norkart's Webatlas services (www.norkart.no) */
-        var wmsKey = "-your-wms-key-";
-        var searchKey = "-search-key-";
-
+        var mapKey = config['mapKey'];
+        var searchKey = config['serviceKey'];
 
         /* Setup leaflet with WMS layer Kart */
         var map = L.map('map').setView([63, 8], 5);
-        var wmsLayer = L.tileLayer.wms('http://waapi.webatlas.no/wms-vektor-standard/?apitoken='+wmsKey, {
-            layers: 'Kart'
-        }).addTo(map);
-
+        var layer = L.tileLayer.webatlas({apikey: mapKey, mapType: L.TileLayer.Webatlas.Type.VEKTOR}).addTo(map);
 
         var marker;
         /* Function for adding a marker*/
