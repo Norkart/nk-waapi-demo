@@ -191,16 +191,16 @@
                     showTeiger(data);
                 }, 
                 function(err) {
-                    alert("Feil", err);
+                    console.log("Feil", err);
                 }
             );
         }
-
+        
 
         /* Set up map and add event listener for click */
         var map = L.map('map').setView([63, 8], 5);
 
-        var layer = L.tileLayer.webatlas({apikey: mapKey, mapType: L.TileLayer.Webatlas.Type.VEKTOR}).addTo(map);
+        var layer = L.tileLayer.webatlas({apikey: mapKey, mapType: L.TileLayer.Webatlas.Type.HYBRID}).addTo(map);
 
         map.on('click', function(event) {
             showTeigForLatLng(event.latlng.lat, event.latlng.lng);

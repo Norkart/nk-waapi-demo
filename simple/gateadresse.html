@@ -116,7 +116,7 @@
             }
             map.panTo(marker.getLatLng())
         }
-
+            
 
 
         /* Targets for the search - you can combine several different sources */
@@ -148,7 +148,7 @@
                 "url" : url + '?format=json&' + paramString,
                 "method" : "GET",
                 "success" : success,
-                "error" : function(e) { alert("error"); }
+                "error" : function(e) { console.log("error", e); }
             });
         }
 
@@ -191,41 +191,6 @@
 
 
         /* Perform suggest and handle callback */
-        function suggest(querytext, callback) {
-            if (querytext && querytext != "") {
-                var url = fritekstsokUrl + "/suggest/kommunecustom";
-                var parameters = {
-                    "Query" : querytext,
-                    "Targets" : targets.join(",")
-                }
-                getRequest(url, parameters, callback)
-            }
-            
-        }
-
-
-        /* Handle suggestion response */
-        var suggestionRes = $("#suggestresults");
-        function showSuggestResults(data) {
-
-            suggestionRes.empty();
-
-            for (var i=0; i<data.Options.length; i++) {
-
-                (function() {
-                    var text = data.Options[i].Text;
-                    var lng = data.Options[i].PayLoad.Posisjon.X;
-                    var lat = data.Options[i].PayLoad.Posisjon.Y;   
-
-                    var el = $("<p>" + text + "</p>");             
-                    el.on('click', function(e) {
-                        setMarker(lat, lng, text)
-                    });
-                    suggestionRes.append(el);
-                })();
-            }
-        }
-
         function suggest(querytext, callback) {
             if (querytext && querytext != "") {
                 var url = fritekstsokUrl + "/suggest/kommunecustom";
@@ -312,10 +277,6 @@
             });
         }
 
-
-
-
-        
         
         /* Register search for input change in search field */
         $('#search-button').on('click', function(e) {     

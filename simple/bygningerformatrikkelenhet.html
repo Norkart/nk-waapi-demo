@@ -1,0 +1,317 @@
+    <!DOCTYPE html>
+    <html>
+
+    <head>
+
+    <title>Webatlas demo</title>
+    <meta charset="utf-8" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/leaflet.css" />
+    <style>
+        
+        body, html {
+            margin:0;
+            padding:0;
+        }
+
+        #map {
+            height: 100%;
+            width: 70%;
+            position: absolute;
+        }
+
+        #sidebar {
+            position:absolute;
+            right:0;
+            height: 100%;
+            width: 30%;
+        }
+
+    </style>
+
+    </head>
+
+    <body>
+
+    <div id="map"></div>
+    <div id="sidebar">
+
+        <h2>Resultat</h2>
+        <div id="results-teiger"></div>
+        <hr/>
+        <div id="results-bygninger"></div>
+        <hr/>
+        <div id="results-bruksenheter"></div>
+    </div>
+
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/leaflet.js"></script>
+    <script src="https://cdn.rawgit.com/Norkart/L.TileLayer.Webatlas/master/L.TileLayer.Webatlas.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.0.0.min.js"></script>
+    <script src="config.js"></script>
+
+
+    <script>    
+
+        /* Keys for accessing Norkart's Webatlas services (www.norkart.no) */
+        var mapKey = config['mapKey'];
+        var serviceKey = config['serviceKey'];
+
+
+        /* URL endpoints for Webatlas API services */
+        var fritekstsokUrl = "https://www.webatlas.no/WAAPI-FritekstSok";
+        var matrikkelGrunnbokUrl = "https://www.webatlas.no/WAAPI-MatrikkelGrunnbok";
+        var matrikkelKartUrl = "https://www.webatlas.no/WAAPI-MatrikkelKart";
+        
+
+        var includeMatrikkelenhetsTeiger = true;
+        
+        /* Set up map  */
+        var map = L.map('map').setView([63, 8], 5);
+        var layer = L.tileLayer.webatlas({apikey: mapKey, mapType: L.TileLayer.Webatlas.Type.HYBRID}).addTo(map);
+        var marker;
+
+
+
+        /* Helper function for performing GET requests */
+        function getRequest(url, parameters, success, error) {
+            console.log(parameters);
+            var paramArray = [];
+            for (key in parameters) {
+                paramArray.push(key + '=' + parameters[key]);
+            }
+            var paramString = paramArray.join('&');
+
+            $.ajax({
+                "url" : url + '?format=json&' + paramString,
+                "method" : "GET",
+                "success" : success,
+                "error" : error
+            });
+        }
+        
+
+        /* get teiger for a matrikkelnummer. NB: each "teig" may have multiple matrikkelenheter linked to it. I.e. it is owned by multiple matrikkelenheter. May return 0, 1 or many teiger */
+        function getTeigerForMatrikkelnummer(matrikkelnummer, inkludermatrikkelenhetsteiger, success, error) {
+            var parameters = {
+                'Matrikkelnummer' : matrikkelnummer,
+                'inkludermatrikkelenhetsteiger' : includeMatrikkelenhetsTeiger,
+                'api_key': serviceKey,
+                'GeometryTextFormat': "GeoJson"
+            }
+            var url = matrikkelKartUrl + '/teig/matrikkelnummer';
+            getRequest(url, parameters, success, error);
+
+        }
+
+
+        function clearResults() {
+            $('#results').empty();
+
+            map.eachLayer(function (layer) {
+                if (layer.type == 'teig') {
+                    map.removeLayer(layer);
+                }
+                
+            });
+        }
+
+        function getProperties(teig) {
+            var properties = {};
+            var ignore = ['WellKnownTextGeometri', 'Geometri']
+            for (var key in teig) {
+                if (ignore.indexOf(key) == -1) {
+                    properties[key] = teig[key];
+                    console.log(key, properties[key]);
+                }
+            }
+            return properties;
+        }
+
+
+        function getTeigInfoText(properties) {
+            var teigText = "<p>TeigID: " + properties.Id + '</p>';  
+            var matrikkelenhetCount = properties.Matrikkelenheter.length;
+            var matText = matrikkelenhetCount > 1 ? 'Matrikkelenheter' : 'Matrikkelenhet';
+            
+            for (var i in properties.Matrikkelenheter) {
+                matText += '<br>';
+                mat = properties.Matrikkelenheter[i];
+                matText += mat.Kommunenummer + ' - ' + mat.Gaardsnummer + '/' + mat.Bruksnummer;
+                
+                if (mat.Festenummer > 0) {
+                    matText += '/' + mat.Festenummer; 
+                } else if (mat.Seksjonsnummer > 0) {
+                    matText += '/0/'+ mat.Seksjonsnummer;
+                }
+            }
+
+            var teigInfo = teigText + matText;
+            return teigInfo;
+
+        }
+
+
+        function showTeiger(data) { 
+
+            var matrikkelnummerListe = [];
+
+            /* Add teiger to map */
+            var teigerCount = data.Teiger.length;
+            for (var i in data.Teiger) {
+                var geojson = JSON.parse(data.Teiger[i].Geometri);
+                geojson['properties'] = getProperties(data.Teiger[i]);
+                var layer =  L.geoJson(geojson, {
+                    onEachFeature: function (feature, layer) {
+                        layer.bindPopup(getTeigInfoText(feature.properties));
+                    }
+                }).addTo(map);
+
+                /* Gather up all matrikkelenheter - potentially multiple for each teig */
+                var matrikkelenheter = geojson['properties']['Matrikkelenheter']
+                for (var i=0; i<matrikkelenheter.length; i++) {
+                    if (matrikkelnummerListe.indexOf(matrikkelenheter[i].Matrikkelnummer) == -1) {
+                        matrikkelnummerListe.push(matrikkelenheter[i].Matrikkelnummer);
+                    }
+                }
+
+                layer.type = "teig";
+
+            }
+
+            /* Show teig metadata information */
+            var text = "<h3>Teiger:</h3>"
+            if (teigerCount == 0) {
+                text += "<p>Ingen teiger funnet.</p>";
+            } else{
+                text = "<p>" + teigerCount + " teig" + (teigerCount > 1 ? "er" : "") + " funnet</p>";
+            }
+
+            text += "<p>Med tilhørende matrikkelenhet" + (matrikkelnummerListe.length > 1 ? "er" : "") + ":</p>";
+            for (var i=0; i<matrikkelnummerListe.length; i++) {
+                text += "<p>" + matrikkelnummerListe[i] + "</p>";
+            }
+
+            $('#results-teiger').html(text);
+            
+        }
+
+        
+        function getBygningerForByggnr(byggnr, successCallback, errorCallback) {
+            var parameters = {
+                'srs' : 4326,
+                'api_key': serviceKey
+            };
+            var url = matrikkelGrunnbokUrl + '/bygninger/' + byggnr;
+            getRequest(url, parameters, successCallback, errorCallback);
+        }
+
+        function getBruksenheterForByggnr(byggnr, successCallback, errorCallback) {
+            var parameters = {
+                'api_key': serviceKey
+            };
+            var url = matrikkelGrunnbokUrl + '/bygning/' + byggnr + '/bruksenheter';
+            getRequest(url, parameters, successCallback, errorCallback);
+        }
+
+
+        function handleBygningResponse(data) {
+            /* Handle bygning-for-bygg response */ 
+            
+            var lat = data.Bygning.Y;
+            var lng = data.Bygning.X;
+            var byggnr = data.Bygning.ByggIdent.BygningsNummer;
+            marker = L.marker([lat, lng]).addTo(map);
+            marker.bindPopup("Bygningsnummer: " + byggnr).openPopup();
+
+            /* Get "bounds" for the marker and fit screen to it */
+            var bounds = L.latLngBounds(marker.getLatLng(), marker.getLatLng());
+            map.fitBounds(bounds, {maxZoom: 18});
+
+            var text = "<p>Bygningsnummer: " + byggnr + "</p>"
+            text += "<p>Status: " + data.Bygning.BygningstatusKode.Beskrivelse + "</p>"
+
+            $('#results-bygninger').html(text);
+
+
+        }
+
+        function handleBruksenheterResponse(data) {
+            /* Handle bruksenheter-for-bygg response */ 
+            /* Generate list of matrikkelnummer and retrieve info */
+
+            var matrikkelnummerListe = [];
+            var text = "<p>Bruksenhet" + (data.Bruksenheter.length > 1 ? "er" : "") + ":</p>";
+
+
+            /* Each bruksenhet has details about itself, as well as the matrikkelnummer*/
+            for (var i=0; i<data.Bruksenheter.length; i++) {
+                var bruksenhet = data.Bruksenheter[i];
+
+                var matrikkelNummerObj = bruksenhet.Matrikkelnummer;
+
+                var matrikkelNummer = matrikkelNummerObj.Komplett;
+
+                if (matrikkelnummerListe.indexOf(matrikkelNummer) == -1) {
+                    matrikkelnummerListe.push(matrikkelNummer);
+                }
+
+                text += "<p> - " + bruksenhet.BruksenhetstypeKode.Beskrivelse + " (for byggning: " + bruksenhet.ByggIdent.BygningsNummer + "). Bruksareal: " + bruksenhet.Bruksareal + "</p>"
+
+                var byggningsNummer = bruksenhet.ByggIdent.BygningsNummer;
+            }
+
+            /* Seeing as all bruksenheter on one matrikkelenhet will have the same matrikkelnummer
+                this is not strictly speaking necessary. We could get away with getting the first.    
+            */
+            for (var i=0; i<matrikkelnummerListe.length; i++) {
+                getTeigerForMatrikkelnummer(matrikkelnummerListe[i], true, showTeiger, handleError);
+            }
+
+
+            $('#results-bruksenheter').html(text);
+
+        }   
+
+
+        function handleError(err) {
+            /* simply print out error */
+            console.log(err);
+        }
+
+
+        var byggnr = getQueryVariable("byggnr");
+
+        function getQueryVariable(variable) {
+        var query = window.location.search.substring(1);
+            var vars = query.split("&");
+                for (var i=0;i<vars.length;i++) {
+                    var pair = vars[i].split("=");
+                if (pair[0] == variable) {
+                    return pair[1];
+                }
+            } 
+            alert('You have to specify "byggnr" in URL. E.g.: ..bygningerformatrikkelenhet.html?byggnr=10011299');
+        }
+
+
+        // byggnr = "10011299";
+        // byggnr = "81173826";
+
+        /* Running two separate calls:
+            - one to get the building point and information
+            - one to get bruksenheter for bygg => gives us information about the matrikkelenhet/teig
+        */ 
+        getBygningerForByggnr(byggnr, handleBygningResponse, handleError);
+        getBruksenheterForByggnr(byggnr, handleBruksenheterResponse, handleError);
+
+
+
+
+
+
+    </script>
+
+    </body>
+    </html>
